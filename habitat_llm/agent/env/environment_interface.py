@@ -131,7 +131,8 @@ class EnvironmentInterface:
 
         # empty variables to store the trajectory data initialized in
         # setup_logging_for_current_episode when save_trajectory is True
-        self.save_trajectory: bool = self.conf.trajectory.save
+        # self.save_trajectory: bool = self.conf.trajectory.save
+        self.save_trajectory = False
         self.save_options: list = None
         self.trajectory_agent_names: list = None
         self.trajectory_save_paths: Dict[str, str] = None

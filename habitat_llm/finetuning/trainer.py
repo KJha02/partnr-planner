@@ -281,7 +281,8 @@ class Trainer:
         generation_params = config.llm_config.generation_params
         training_args = SFTConfig(
             dataset_text_field="text",
-            output_dir=config.training_arguments.checkpoint_dir,
+            # output_dir=config.training_arguments.checkpoint_dir,
+            output_dir='/mmfs1/gscratch/socialrl/kjha/habitat/partnr-planner/outputs/checkpoint',
             run_name=config.wandb.name,
             report_to="wandb",
             save_strategy="steps",
@@ -345,7 +346,7 @@ def main(config: DictConfig):
 
     if not config.evaluate and PartialState().process_index == 0:
         wandb.init(
-            name=config.wandb.name, project=config.wandb.project, config=config_dict
+            name=config.wandb.name, project=config.wandb.project, config=config_dict,  entity='social-rl'
         )
 
     trainer = Trainer(config)

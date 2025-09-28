@@ -119,13 +119,37 @@ class DecentralizedEvaluationRunner(EvaluationRunner):
 
         assert isinstance(self.planner, dict)
         # Loop through all available planners
+        state_infos: Dict[str, Any] = {}
         for planner in self.planner.values():
             # Get next action for this planner
+            
             (
                 this_planner_low_level_actions,
                 this_planner_info,
                 this_planner_is_done,
             ) = planner.get_next_action(instruction, observations, world_graph)
+            # high_level_actions = this_planner_info["high_level_actions"]
+            ## TODO: State information is within planner.params and this_planner_info['agent_states] and this_planner_info['agent_collisions]
+            state_info_keys = ['tool_list', 'agent_id', 'tool_descriptions', 'agent_role_description', 'world_description', 'agent_states', 'agent_collisions']
+            state_info = {}
+            for key in state_info_keys:
+                if key in planner.params:
+                    state_info[key] = planner.params[key]
+                elif key in this_planner_info:
+                    state_info[key] = this_planner_info[key]
+            # state_info = {
+            #     'tool_list': planner.params['tool_list'],
+            #     'agent_id': planner.params['id'],
+            #     'tool_descriptions': planner.params['tool_descriptions'],
+            #     'agent_role_description': planner.params['agent_role_description'],
+            #     'world_description': planner.params['world_description'],
+            #     'agent_states': this_planner_info['agent_states'],
+            #     'agent_collisions': this_planner_info['agent_collisions'],
+            # }
+            for key, val in state_info.items():
+                if key not in state_infos:
+                    state_infos[key] = []
+                state_infos[key].append(val)
             # Update the output dictionary with planned low level actions
             low_level_actions.update(this_planner_low_level_actions)
 
@@ -146,4 +170,4 @@ class DecentralizedEvaluationRunner(EvaluationRunner):
 
             all_planners_are_done = this_planner_is_done and all_planners_are_done
 
-        return low_level_actions, planner_info, all_planners_are_done
+        return low_level_actions, planner_info, all_planners_are_done, state_infos

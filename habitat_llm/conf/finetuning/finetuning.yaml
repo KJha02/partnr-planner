@@ -8,17 +8,17 @@ run_type: "train"
 init_distrib: True
 has_thought: False
 evaluate: False
-eval_checkpoint_dir: ""
+eval_checkpoint_dir: "/mmfs1/gscratch/socialrl/kjha/habitat/partnr-planner/outputs/habitat_llm/train_data_filter_1.0"
 should_clip_dataset: True
 dataset:
   _target_: habitat_llm.finetuning.dataset.build_dataset_simple
-  path: "{base path data folders}"
+  path: "/mmfs1/gscratch/socialrl/kjha/habitat/partnr-planner/outputs/habitat_llm/train_data_filter_1.0"
   max_val_size: 1000
   max_train_size: 1000
-  val:
-    - "{validation_folder}"
-  train:
-    - "{train_folder}"
+  # val:
+  #   - None
+  # train:
+  #   - None
 
 training_arguments:
   batch_size: 2
@@ -60,3 +60,4 @@ llm_config:
 wandb:
   name: "finetuning_experiment"
   project: "partnr"
+  entity: "social-rl"

@@ -593,7 +593,6 @@ class EvaluationRunner:
         planner_info: Dict[str, Any] = {}
         low_level_actions: List[Dict[str, Any]] = []
         should_end = False
-
         # Plan until required
         while not should_end:
             # Print the llm response
@@ -615,7 +614,7 @@ class EvaluationRunner:
                     )
 
             # Get next low level actions
-            low_level_actions, planner_info, should_end = self.get_low_level_actions(
+            low_level_actions, planner_info, should_end, state_infos = self.get_low_level_actions(
                 self.current_instruction, observations, self.env_interface.world_graph
             )
 

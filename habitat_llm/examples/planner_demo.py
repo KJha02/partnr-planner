@@ -13,6 +13,8 @@ import traceback
 import json
 import shutil
 from omegaconf import OmegaConf
+import gzip
+from tqdm import tqdm
 
 
 # append the path of the
@@ -332,63 +334,124 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
         }
 
         num_episodes = len(env_interface.env.episodes)
+        base_output_dir = "/mmfs1/gscratch/socialrl/kjha/habitat/partnr-planner/outputs/habitat_llm/test_agent_w_task"
         for run_id in range(config.num_runs_per_episode):
-            for _ in range(num_episodes):
+            for k_episode in tqdm(range(num_episodes)):
                 # Get episode id
                 episode_id = env_interface.env.env.env._env.current_episode.episode_id
 
-                # Get instruction
-                instruction = env_interface.env.env.env._env.current_episode.instruction
-                print("\n\nEpisode", episode_id)
+                sa_output_dir = os.path.join(base_output_dir, f"episode_{episode_id}_{run_id}")
 
-                try:
-                    info = eval_runner.run_instruction(
-                        output_name=f"episode_{episode_id}_{run_id}"
-                    )
+                if not os.path.exists(sa_output_dir):
+                    os.makedirs(sa_output_dir)
 
-                    info_episode = {
-                        "run_id": run_id,
-                        "episode_id": episode_id,
-                        "instruction": instruction,
-                    }
-                    stats_keys = {
-                        "task_percent_complete",
-                        "task_state_success",
-                        "sim_step_count",
-                        "replanning_count",
-                        "runtime",
-                    }
+                    # Get instruction
+                    instruction = env_interface.env.env.env._env.current_episode.instruction  # Ground truth task
+                    print("\n\nEpisode", episode_id)
 
-                    # add replanning counts to stats_keys as scalars if replanning_count is a dict
-                    if "replanning_count" in info and isinstance(
-                        info["replanning_count"], dict
-                    ):
-                        for agent_id, replan_count in info["replanning_count"].items():
-                            stats_keys.add(f"replanning_count_{agent_id}")
-                            info[f"replanning_count_{agent_id}"] = replan_count
+                    try:
+                        info = eval_runner.run_instruction(
+                            output_name=f"episode_{episode_id}_{run_id}"
+                        )
 
-                    stats_episode = extract_scalars_from_info(
-                        info, ignore_keys=info.keys() - stats_keys
-                    )
-                    stats_episodes[str(run_id)][episode_id] = stats_episode
+                        
+                        action_history = eval_runner.env_interface.agent_action_history
+                        state_action_dicts = {}
+                        for agent_id in range(len(action_history)):
+                            agent_sa_pairs = []
+                            action_infos = action_history[agent_id]
+                            for timepoint in range(len(action_infos)):
+                                if 'curr_graph' in action_infos[timepoint].info['planner_info']:
+                                    curr_graph = action_infos[timepoint].info['planner_info']['curr_graph']
+                                else:
+                                    curr_graph = None
+                                if 'agent_states' in action_infos[timepoint].info['planner_info']:
+                                    agent_state = action_infos[timepoint].info['planner_info']['agent_states']
+                                else:
+                                    agent_state = None
+                                agent_action = action_infos[timepoint].action
+                                if agent_id in eval_runner.planner:
+                                    planner_params = eval_runner.planner[agent_id].params
+                                    if 'tool_list' in planner_params:
+                                        tool_list = planner_params['tool_list']
+                                    else:
+                                        tool_list = []
+                                    if 'tool_descriptions' in planner_params:
+                                        tool_descriptions = planner_params['tool_descriptions']
+                                    else:
+                                        tool_descriptions = ''
+                                agent_sa_pair = {
+                                    'curr_graph': curr_graph,
+                                    'agent_state': agent_state,
+                                    'agent_action': agent_action,
+                                    'tool_list': tool_list,
+                                    'tool_descriptions': tool_descriptions,
+                                    'instruction': instruction,
+                                }
+                                agent_sa_pairs.append(agent_sa_pair)
+                            state_action_dicts[agent_id] = agent_sa_pairs
+                        
+                        # Save state_action_dicts to compressed files
+                        dataset_file = env_interface.conf.habitat.dataset.data_path.split("/")[-1]
+                        # sa_output_dir = os.path.join(
+                        #     config.paths.results_dir,
+                        #     dataset_file,
+                        #     "state_action_traj_data",
+                        #     f"episode_{episode_id}_{run_id}"
+                        # )
+                        
+                        
+                        # Save each agent's trajectory separately
+                        for agent_id, agent_sa_pairs in state_action_dicts.items():
+                            sa_output_file = os.path.join(sa_output_dir, f"agent_{agent_id}.json.gz")
+                            # Use gzip to compress the JSON data
+                            with gzip.open(sa_output_file, 'wt', encoding='utf-8') as f:
+                                json.dump(agent_sa_pairs, f, ensure_ascii=False)
+                            
 
-                    cprint("\n---------------------------------", "blue")
-                    cprint(f"Metrics For Run {run_id} Episode {episode_id}:", "blue")
-                    for k, v in stats_episodes[str(run_id)][episode_id].items():
-                        cprint(f"{k}: {v:.3f}", "blue")
-                    cprint("\n---------------------------------", "blue")
-                    # Log results onto a CSV
-                    epi_metrics = stats_episodes[str(run_id)][episode_id] | info_episode
-                    if config.evaluation.log_data:
-                        save_success_message(config, env_interface, stats_episode)
-                    write_to_csv(config.paths.epi_result_file_path, epi_metrics)
-                except Exception as e:
-                    # print exception and trace
-                    traceback.print_exc()
-                    print("An error occurred while running the episode:", e)
-                    print(f"Skipping evaluating episode: {episode_id}")
-                    if config.evaluation.log_data:
-                        save_exception_message(config, env_interface)
+                        info_episode = {
+                            "run_id": run_id,
+                            "episode_id": episode_id,
+                            "instruction": instruction,
+                        }
+                        stats_keys = {
+                            "task_percent_complete",
+                            "task_state_success",
+                            "sim_step_count",
+                            "replanning_count",
+                            "runtime",
+                        }
+
+                        # add replanning counts to stats_keys as scalars if replanning_count is a dict
+                        if "replanning_count" in info and isinstance(
+                            info["replanning_count"], dict
+                        ):
+                            for agent_id, replan_count in info["replanning_count"].items():
+                                stats_keys.add(f"replanning_count_{agent_id}")
+                                info[f"replanning_count_{agent_id}"] = replan_count
+
+                        stats_episode = extract_scalars_from_info(
+                            info, ignore_keys=info.keys() - stats_keys
+                        )
+                        stats_episodes[str(run_id)][episode_id] = stats_episode
+
+                        cprint("\n---------------------------------", "blue")
+                        cprint(f"Metrics For Run {run_id} Episode {episode_id}:", "blue")
+                        for k, v in stats_episodes[str(run_id)][episode_id].items():
+                            cprint(f"{k}: {v:.3f}", "blue")
+                        cprint("\n---------------------------------", "blue")
+                        # Log results onto a CSV
+                        epi_metrics = stats_episodes[str(run_id)][episode_id] | info_episode
+                        if config.evaluation.log_data:
+                            save_success_message(config, env_interface, stats_episode)
+                        write_to_csv(config.paths.epi_result_file_path, epi_metrics)
+                    except Exception as e:
+                        # print exception and trace
+                        traceback.print_exc()
+                        print("An error occurred while running the episode:", e)
+                        print(f"Skipping evaluating episode: {episode_id}")
+                        if config.evaluation.log_data:
+                            save_exception_message(config, env_interface)
 
                 try:
                     # Reset env_interface (moves onto the next episode in the dataset)
@@ -403,9 +466,13 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
 
                 # Reset evaluation runner
                 eval_runner.reset()
+                # print(f"INSTRUCTION: {instruction}")
+
+                # exit()
 
             # aggregate metrics across the current run.
             run_metrics = aggregate_measures(stats_episodes[str(run_id)])
+
             cprint("\n---------------------------------", "blue")
             cprint(f"Metrics For Run {run_id}:", "blue")
             for k, v in run_metrics.items():
@@ -437,6 +504,11 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
         # Potentially we may want to send something
 
         conn.close()
+
+
+def load_state_action_trajectory(file_path):
+    with gzip.open(file_path, 'rt', encoding='utf-8') as f:
+        return json.load(f)
 
 
 if __name__ == "__main__":

@@ -47,9 +47,9 @@ paths:
 
 
 evaluation:
-  do_print: True
-  save_video: False
-  log_data: True
+  do_print: False
+  save_video: True
+  log_data: False
   save_rgb: False
   log_detailed_traces: True
 

@@ -60,7 +60,6 @@ class MotorSkillTool(Tool):
             self.env,
             self.agent_uid,
         )
-
         # If skill is nn - freeze visual encoder and reset critic
         if hasattr(skill, "actor_critic") and not self._use_torchscript:
             skill.actor_critic.eval()
